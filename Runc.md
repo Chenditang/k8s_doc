@@ -101,6 +101,8 @@ cgroup包含三个组件：
   `memory`   控制cgroup中进程的内存占用
   `net_cls`  将cgroup中进程产生的网络包分类，便于TC限流
   `net_prio` 设置cgroup中进程产生的网络流量的优先级
+  `hugetlb`
+  `pids`
 
 - hierarchy
   通过hierarchy将一组cgroup组成树状结构，通过树状结构实现继承。类如cgroup1限制了IO访问，其中某个进程需要进一步限制设备访问，为了避免影响cgroup1中其他进程，可以创建cgroup2，继承cgroup1的限制，并增加设备访问限制而不影响cgroup1中的其他进程。
@@ -270,7 +272,9 @@ seccomp支持两种模式：
 
 > https://blog.csdn.net/chweiweich/article/details/55098410
 
-## 1.5 UFS
+## 1.5 rlimits
+
+##1.6 UFS
 
 
 
@@ -312,80 +316,336 @@ Linux基金会于2015年6月成立OCI（Open Container Initiative）组织，旨
 
 OCI标准包(bundle)用于将容器及容器的配置数据存储在磁盘上以便运行时读取，包含以下两个部分：
 
-- config.json
+### 2.2.1 config.json
 
-  容器配置数据，config.json可以通过`runc spec `命令生成。包含容器运行的进程，与宿主机独立的和应用相关的特定信息，如安全权限、环境变量和参数等。具体如下：
+容器配置数据，config.json可以通过`runc spec `命令生成。包含容器运行的进程，与宿主机独立的和应用相关的特定信息，如安全权限、环境变量和参数等。具体如下：
 
-  - ociVersion - OCI规范的版本
+- ociVersion - OCI规范的版本
 
-  - root - 容器的rootfs
+- root - 容器的rootfs
+
+  ```json
+          "root": {
+                  "path": "rootfs",  //rootfs路径
+                  "readonly": true   //rootfs是否只读
+          },
+  ```
+
+- hostname - 配置容器hostname，只有创建了UTS NS才可以指定
+
+- process - 容器的进程信息
+
+  - terminal - 指定是否连接终端。
+
+  - user - 指定容器中进程的UID/GID
+
+  - args - 传递给可执行文件的参数
+
+  - cwd - 可执行文件的工作目录，必须是绝对路径。
+
+  - env - 传递给进程的环境变量，为key=value格式。
+
+  - **capabilities** - 指定容器中进程的capabilities
+
+    - bounding
+    - effective
+    - inheritable
+    - permitted
+    - ambient
+
+  - **rlimits** - 设置容器中进程的资源限额
+    - type - linux平台参考`man getrlimit`，例如RLIMIT_MSGQUEUE
+    - soft
+    - hard 
+    ```json
+                    "rlimits": [
+                            {
+                                    "type": "RLIMIT_NOFILE",
+                                    "hard": 1024,
+                                    "soft": 1024
+                            }
+                    ]
+    ```
+
+  - noNewPrivileges - 是否以特权运行
+
+- mounts - 配置容器中的挂载点通常容器包含以下挂载点(/proc, /dev, /dev/pts, /dev/shm, /dev/mqueue,/sys  , /sys/fs/cgroup等)
+  - destination - 挂载点在容器内的目标位置
+  - type             - 文件系统类型
+  - source         - 源设备名或文件名
+  - options       - 挂载参数
+
+- linux  - 平台相关的配置(linux, win, vm等)，
+  - cgroupPath - 设置cgroup路径
+
+  - **resources**  - 设置cgroup资源限额
+    - network - net_cls，net_prio限额
+      ```json
+          "network": {
+              "classID": 1048577,
+              "priorities": [
+                  {
+                      "name": "eth0",
+                      "priority": 500
+                  },
+              ]
+         }
+      ```
+
+    - pids
+
+    - memory - 设置内存限额
+
+      ```json
+          "memory": {                   
+              "limit": 536870912,         # 限额
+              "reservation": 536870912,   # 软限额
+              "swap": 536870912,          # memory+swap 限额
+              "kernel": -1,               # 内核memory hard限额
+              "kernelTCP": -1,            # 内核TCP buffer memory hard限额
+              "swappiness": 0,
+              "disableOOMKiller": false
+          }
+      ```
+
+    - cpu
+
+      ```json
+                  "cpu": {
+                      "shares": 1024,     # 指定cgroup中任务可用的CPU时间的相对份额
+                      "quota": 1000000,   # 指定任务在时间段内可以运行的总时间
+                      "period": 500000,  # 指定定期重新分配对CPU资源的访问权限的时间段
+                      "realtimeRuntime": 950000,
+                      "realtimePeriod": 1000000,
+                      "cpus": "2-3",      # 列出container可用的cpu
+                      "mems": "0-7"
+                  },
+      ```
+
+    - blockIO
+
+      ```json
+                  "blockIO": {
+                      "weight": 10,      # 指定每个cgroup的权重。 
+                      "leafWeight": 10,  
+                      "weightDevice": [  # 设备权重
+                          {
+                              "major": 8,
+                              "minor": 0,
+                              "weight": 500,
+                              "leafWeight": 300
+                          },
+                          {
+                              "major": 8,
+                              "minor": 16,
+                              "weight": 500
+                          }
+                      ],
+                      "throttleReadBpsDevice": [  # bandwidth rate limits
+                          {
+                              "major": 8,
+                              "minor": 0,
+                              "rate": 600
+                          }
+                      ],
+                      "throttleWriteIOPSDevice": [ # IO rate limits
+                          {
+                              "major": 8,
+                              "minor": 16,
+                              "rate": 300
+                          }
+                      ]
+                  }
+      ```
+
+    - device - 设置Device白名单访问权限
+
+      ```json
+          "devices": [
+              {
+                  "allow": false,
+                  "access": "rwm"
+              },
+              {
+                  "allow": true,
+                  "type": "c",
+                  "major": 10,
+                  "minor": 229,
+                  "access": "rw"
+              },
+              {
+                  "allow": true,
+                  "type": "b",
+                  "major": 8,
+                  "minor": 0,
+                  "access": "r"
+              }
+          ]
+
+      ```
+
+    - hugepageLimits - HugeTLB限额
+
+    - rdma
+
+    - intelRdt
+
+  - namespaces  - 设置容器的namespace，可以指定type(pid,network,mount等)和path两个参数
+
+  - **seccomp** - 限制容器的系统调用
+
+    - defaultAction   - seccomp 默认action
+
+    - architectures    - 系统架构(SCMP_ARCH_X86,SCMP_ARCH_X86_64...)
+
+    - syscalls  - 限制系统调用及其参数
+
+      ```json
+              "syscalls": [
+                  {
+                      "names": [
+                          "clone",
+                      ],
+                      "action": "SCMP_ACT_ALLOW"
+                      "args": [
+                      	{
+                      		"index": 0,
+                      		"value": 2080505856,
+                      		"op": "SCMP_CMP_MASKED_EQ"
+                  		}
+                  }
+              ]
+      ```
+
+
+
+  - devices  - 列出容器中可用的devices
 
     ```json
-            "root": {
-                    "path": "rootfs",  //rootfs路径
-                    "readonly": true   //rootfs是否只读
+            "devices": [
+                {
+                    "path": "/dev/sda",
+                    "type": "b",
+                    "major": 8,
+                    "minor": 0,
+                    "fileMode": 432,
+                    "uid": 0,
+                    "gid": 0
+                }
+            ],
+    ```
+
+  - sysctl  - 允许容器修改内核参数
+
+    ```json
+           "sysctl": {
+                "net.ipv4.ip_forward": "1",
+                "net.core.somaxconn": "256"
             },
     ```
 
-  - process - 容器的进程信息
+  - maskedPaths   - 将覆盖容器内提供的路径，以便无法读取该路径。
 
-    - terminal - 指定是否连接终端。
-    - user - 指定容器中进程的UID/GID
-    - cwd - 可执行文件的工作目录，必须是绝对路径。
-    - env - 传递给进程的环境变量，为key=value格式。
-    - args - 传递给可执行文件的参数
-    - capabilities - 指定容器中进程的capabilities
-    - rlimits - 限制容器中进程的资源
-    - noNewPrivileges - 是否以特权运行
+  - readonlyPaths  - 将提供的路径设置为容器内的只读路径。
 
-  - mounts
+  - uidMappings/gidMappings - 设置host到container的uid/gid映射
 
-  - 
+    - containerID - 容器中的uid/gid
+    - hostId           - host中被映射的uid/gid
+    - size               - id size
 
-- rootfs
+  - rootfsPropagation - 设置rootfs mount propagation类型(shared, private, slave, unbindable)
 
-  根文件系统目录，包含了容器执行所需的必要环境依赖，如/bin、/var、/lib、/dev、/usr等目录及相应文件。rootfs目录必须与包含配置信息的config.json文件同时存在容器目录最顶层。
+  - mountLabel - 设置容器中mount的selinux标签
+
+- hook - 在容器运行前和停止后执行一些命令，通常用于配置网络，volume清理等。
+
+  - prestart - 容器创建后运行前执行
+  - poststart - 容器运行后执行
+  - poststop - 容器停止后执行
+
+  ```json
+      "hooks": {
+          "prestart": [
+              {
+                  "path": "/usr/bin/fix-mounts",
+                  "args": ["fix-mounts", "arg1", "arg2"],
+                  "env":  [ "key1=value1"]
+              },
+              {
+                  "path": "/usr/bin/setup-network"
+              }
+          ],
+          "poststart": [
+              {
+                  "path": "/usr/bin/notify-start",
+                  "timeout": 5
+              }
+          ],
+          "poststop": [
+              {
+                  "path": "/usr/sbin/cleanup.sh",
+                  "args": ["cleanup.sh", "-f"]
+              }
+          ]
+      }
+  ```
+
+
+### 2.2.2 rootfs
+
+根文件系统目录，包含了容器执行所需的必要环境依赖，如/bin、/var、/lib、/dev、/usr等目录及相应文件。rootfs目录必须与包含配置信息的config.json文件同时存在容器目录最顶层。
+
+
+
+## 2.3 image-spec
+
 
 
 # 3. runc
 
-OCI定义了容器运行时标准，runC是从Docker的libcontainer中迁移而来，按照开放容器格式标准（OCF, Open Container Format）制定的一种具体实现，实现容器启停、资源隔离等功能。
+OCI定义了容器运行时标准，runc是从libcontainer中迁移而来，按照开放容器格式标准（OCF, Open Container Format）一种具体实现，去除了Docker包含的诸如镜像、Volume等高级特性，通过调用libcontainer包对namespaces、cgroups、capabilities以及文件系统的管理和分配实现进程资源的隔离。实现容器启停、资源隔离等功能。
 
-#### 5.3 容器运行状态
+## 3.1 创建容器
 
-容器标准格式也要求容器把自身运行时的状态持久化到磁盘中，便于外部的工具对此信息使用和演绎。运行时状态以JSON格式编码存储。推荐把运行时状态的JSON文件存储在临时文件系统中以便系统重启后会自动移除。
+OCF标准中定义了关于容器conf.json和rootfs，runc就是通过这些来创建并启动一个容器.
 
-基于Linux内核的操作系统，该信息统一地存储在/run/opencontainer/containers目录，该目录结构下以容器ID命名的文件夹（/run/opencontainer/containers/<containerID>/state.json）中存放容器的状态信息并实时更新。有了这样默认的容器状态信息存储位置以后，外部的应用程序就可以在系统上简便地找到所有运行着的容器了。
+createContainer()将config.json中的信息传递给factory的create方法，factory可以基于linux,win等系统实现，接口定义如下：
 
-state.json文件中包含的具体信息需要有：
+```go
+type Factory interface {
+        Create(id string, config *configs.Config) (Container, error)
+        Load(id string) (Container, error)
+        StartInitialization() error
+        Type() string
+}
+```
 
-- 版本信息：存放OCI标准的具体版本号。
-- 容器ID：通常是一个哈希值，也可以是一个易读的字符串。在state.json文件中加入容器ID是为了便于之前提到的运行时hooks只需载入state.json就可以定位到容器，然后检测state.json，发现文件不见了就认为容器关停，再执行相应预定义的脚本操作。
-- PID：容器中运行的首个进程在宿主机上的进程号。
-- 容器文件目录：存放容器rootfs及相应配置的目录。外部程序只需读取state.json就可以定位到宿主机上的容器文件目录。 标准的容器生命周期应该包含三个基本过程。
-- 容器创建：创建包括文件系统、namespaces、cgroups、用户权限在内的各项内容。
-- 容器进程的启动：运行容器进程，进程的可执行文件定义在的config.json中，args项。
-- 容器暂停：容器实际上作为进程可以被外部程序关停（kill），然后容器标准规范应该包含对容器暂停信号的捕获，并做相应资源回收的处理，避免孤儿进程的出现。
+Create方法检查容器的配置，初始化容器的rootfs，最后返回linuxContainer结构
 
-#### 5.5 runC工作原理
+```go
+type linuxContainer struct {
+        id                   string
+        root                 string
+        config               *configs.Config
+        cgroupManager        cgroups.Manager
+        intelRdtManager      intelrdt.Manager
+        initPath             string
+        initArgs             []string
+        initProcess          parentProcess
+        initProcessStartTime uint64
+        criuPath             string
+        newuidmapPath        string
+        newgidmapPath        string
+        m                    sync.Mutex
+        criuVersion          int  
+        state                containerState
+        created              time.Time
+}
 
-runC去除了Docker包含的诸如镜像、Volume等高级特性，通过调用libcontainer包对namespaces、cgroups、capabilities以及文件系统的管理和分配实现进程资源的隔离。和libcontainer相比，主要有如下变化：
+```
 
-1. 将`nsinit`放到外面，重命名为`runc`，使用[`cli.go`](https://github.com/codegangsta/cli)实现。
-2. 按照OCF标准把原先所有信息混在一起的配置文件拆分成`config.json`和`runtime.json`。
-3. 按照OCF标准增加了容器运行前和停止后执行`hook`脚本功能。
-4. 增加了`runc kill`命令，用于发送一个`SIG_KILL`信号给指定容器ID的`init`进程。
 
-##### 5.5.1 runC启动容器
 
-OCF标准中定义了关于容器的两份配置文件和一个依赖包，runc就是通过这些来启动一个容器：
 
-<==待补充==>
 
-- 容器定义工具
-
-  docker image是docker容器的模板，runtime依据docker image创建容器。dockerfile是包含若干命令的文本文件，可以通过这些命令创建出dokcer image。
-
-- Registry
-
-  容器是通过image创建的，需要一个仓库来统一存放image，这个仓库叫做Registry。企业可以通过Docker Registry构建私有的Registry。
