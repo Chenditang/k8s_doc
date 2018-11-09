@@ -1378,6 +1378,19 @@ Resource
       targetAverageValue: 200Mi
 ```
 
+External:
+
+```yaml
+  metrics:
+   - type: External
+     external:
+       metricName: queue_messages_ready
+       metricSelector:
+         matchLabels:
+           queue: worker_tasks
+       targetAverageValue: 30
+```
+
 
 
 ### 2.18.2 metrics APIs
@@ -1763,25 +1776,13 @@ ProbeManager依赖statusManager，livenessManager，containerRefManager实现Pod
 
 ### 4.2.12 stats
 
-k8s提供了如下接口，其中最主要的接口是**stats/summarm**，**metrics-server**通过stats/summary接口获取Node和Pod的信息。
+kubelet直接从cAdvisor暴露了许多metrics
 
 ```go
 [kubelet/server/stats/handler.go]
 "/stats"
 handleStats
   -> h.provider.GetRawContainerInfo("/", query.cadvisorRequest(), false) 
-
-"/stats/summary"
-handleSummary
-  -> summaryProvider.Get(forceStatsUpdate)
-     -> provider.GetNode()
-        provider.GetNodeConfig()
-        provider.GetCgroupStats("/", updateStats)
-        provider.RootFsStats()
-        provider.ImageFsStats()
-        provider.ListPodStats()
-        provider.RlimitStats()
-  -> summaryProvider.GetCPUAndMemoryStats()
 
 "/stats/container"
 handleSystemContainer
@@ -1794,7 +1795,23 @@ handlePodContainer
   -> provider.GetContainerInfo()
 ```
 
-**stats/summary接口**从StatsProvider结构中获取Node和Pod的信息:
+kubelet还提供了**stats/summarm**，该接口不是直接通过cadvisor获取，cadvisor只提供了部分metrics源。**metrics-server**通过stats/summary接口获取Node和Pod的信息。
+
+```go
+"/stats/summary"
+handleSummary
+  -> summaryProvider.Get(forceStatsUpdate)
+     -> provider.GetNode()
+        provider.GetNodeConfig()
+        provider.GetCgroupStats("/", updateStats)
+        provider.RootFsStats()
+        provider.ImageFsStats()
+        provider.ListPodStats()
+        provider.RlimitStats()
+  -> summaryProvider.GetCPUAndMemoryStats()
+```
+
+stats/summary接口从StatsProvider结构中获取Node和Pod的信息:
 
 ```go
 [kubelet/stats/stats_provider.go]
@@ -1804,11 +1821,6 @@ type StatsProvider struct {
         podManager   kubepod.Manager   
         runtimeCache kubecontainer.RuntimeCache
         containerStatsProvider
-}
-
-type containerStatsProvider interface {
-        ListPodStats() ([]statsapi.PodStats, error)
-        ImageFsStats() (*statsapi.FsStats, error)
 }
 ```
 根据k8s使用的runtime，StatsProvider需要从以下接口获取不同运行时的node和Pod信息：
@@ -1837,20 +1849,50 @@ type containerStatsProvider interface {
 stats_provider.go包含如下方法：
 
 ```go
-GetCgroupStats
-  -> info, err := getCgroupInfo(p.cadvisor, cgroupName, updateStats)
-      -> cadvisor.ContainerInfoV2()
-  -> cadvisorInfoToContainerStats(cgroupName, info, nil, nil)
-  -> cadvisorInfoToNetworkStats(cgroupName, info)
-GetCgroupCPUAndMemoryStats
+rootStats{CPU,Memory}   // 获取cpu，memory信息
+networkStats            // 获取network信息
+  -> GetCgroupStats
+    -> info, err := getCgroupInfo(p.cadvisor, cgroupName, updateStats)
+       -> cadvisor.ContainerInfoV2()
+    -> cadvisorInfoToContainerStats(cgroupName, info, nil, nil)
+    -> cadvisorInfoToNetworkStats(cgroupName, info)
+rootFsStats             // 获取FS 信息，包括已用/可用Bytes，inode信息
+  -> RootFsStats
+     -> cadvisor.RootFsInfo()
 
-RootFsStats
-  -> cadvisor.RootFsInfo()
-GetContainerInfo
+imageFsStats           // 获取runtime中FS信息，该信息可能从cadvisor或crio中获取
+  -> ImageFsStats()
+     -> cadvisor.ImagesFsInfo()
+        imageService.ImageStats()   //从cAdvisor获取信息
+     -> imageService.ImageFsInfo()
+
+rlimit       -> RlimitStats()       //直接从系统获取。
+
+SystemContainers -> GetSystemContainersStats()
+-----------------------------------------------
+GetContainerInfo                   // 用于获取pod中container信息
   -> pod := kubecontainer.Pods(pods).FindPod(podFullName, podUID)
   -> container := pod.FindContainerByName(containerName)
   -> cadvisor.DockerContainer()
-GetRawContainerInfo
+GetRawContainerInfo               //root container
+```
+
+kubelet中cadvisor提供了如下接口：
+
+```go
+v1
+ContainerInfo     -> GetContainerInfo
+VersionInfo       -> GetVersionInfo
+SubcontainerInfo  -> SubcontainersInfo
+                     cadvisorapi.ContainerInfo
+MachineInfo       -> GetMachineInfo
+WatchEvents
+
+v2 
+ContainerInfoV2  -> GetContainerInfoV2
+ImagesFsInfo     -> getFsInfo
+RootFsInfo       -> GetDirFsInfo
+getFsInfo        -> GetFsInfo
 ```
 
 
@@ -2560,7 +2602,7 @@ HandlePodCleanups   -> kl.podWorkers.ForgetNonExistingPodWorkers(desiredPods)
 
 Kubelet与容器运行时通信（或者是CRI插件填充了容器运行时）时，Kubelet就是客户端，而CRI插件就是对应的服务器。它们之间可以通过Unix 套接字或者gRPC框架进行通信。
 
-![cri](./Picture/cri.jpg)
+![cri](../Picture/cri.jpg)
 
 protocol buffers API包含了两个gRPC服务：**ImageService**和**RuntimeService**。ImageService提供了从镜像仓库拉取、查看、和移除镜像的RPC。RuntimeSerivce包含了Pods和容器生命周期管理的RPC，以及跟容器交互的调用(exec/attach/port-forward)。一个单块的容器运行时能够管理镜像和容器（例如：Docker和Rkt），并且通过同一个套接字同时提供这两种服务。这个套接字可以在Kubelet里通过标识–container-runtime-endpoint和–image-service-endpoint进行设置。
 
@@ -3018,7 +3060,7 @@ kube-proxy启动后默认会新建以下链，
 
 
 
-![iptables](./Picture/services-iptables-overview.svg)
+![iptables](../Picture/services-iptables-overview.svg)
 
 #### 5.2.1.1 ClusterIP:
 
@@ -3168,7 +3210,7 @@ iptables规则如下。如果192.168.56.110为外部地址，则匹配第二条�
 
 该模式下，kube-proxy监听master的server/endpoint添加/删除事件，通过netlink接口创建ipvs规则，并定期与 Services和Endpoints同步ipvs规则，以确保ipvs状态与预期一致。当访问服务时，流量将被重定向到其中一个后端Pod。
 
-![ipvs](./Picture/services-ipvs-overview.svg)
+![ipvs](../Picture/services-ipvs-overview.svg)
 
 #### 5.2.2.1 ClusterIP
 
@@ -3343,7 +3385,7 @@ Members:
 
 在此模式下，kube-proxy监视master添加和删除Service和Endpoints事件。 对于每个服务，会在本地节点上打开一个端口（随机选择）。
 
-![userspace](./Picture/services-userspace-overview.svg)
+![userspace](../Picture/services-userspace-overview.svg)
 
 
 
@@ -3566,7 +3608,7 @@ kube-router是基于Kubernetes网络设计的一个集负载均衡器、网络�
 
 认证和授权只作用于API Server的安全端口，认证解决用户是谁的问题，授权解决用户能做什么的问题。Kuberntes中API Server的访问控制过程图示如下：
 
-![access-control-overview](./Picture/access-control-overview.svg)
+![access-control-overview](../Picture/access-control-overview.svg)
 
 ## 7.1 Authentication
 
@@ -5077,9 +5119,9 @@ Run
 
 # 11 kube-controller-manager
 
-![metrics](./Picture/hpa_metrics.png)
-
 ## 11.1 HPA
+
+![metrics](./Picture/hpa_metrics.png)
 
 HPA可以基于如下4类接口实现自动伸缩：
 
@@ -5177,10 +5219,6 @@ GetExternalMetric
 
 
 
-
-
-
-
 # 12 client-go
 
 - The `kubernetes` package contains the clientset to access Kubernetes API.
@@ -5270,10 +5308,6 @@ spec:
 ## 13.3 [Addon Resizer](https://github.com/kubernetes/autoscaler/tree/master/addon-resizer)
 
 a simplified version of vertical pod autoscaler that modifies resource requests of a deployment based on the number of nodes in the Kubernetes Cluster. Current state - beta.
-
-# 12 kubernetes federation
-
-https://kubernetes.io/docs/concepts/cluster-administration/federation/
 
 
 
@@ -5378,6 +5412,86 @@ Metrics Server通过从kubernet.summary_api收集节点和pod的CPU和内存使�
   ```
 
 
+代码流程:
+
+metrics-server pod启动后，定期搜集数据并存储
+
+```go
+[pkg/manager/manager.go]
+RunUntil
+  -> rm.source.Collect(ctx)
+  -> rm.sink.Receive(data)
+
+[pkg/sources/manager.go]
+Collect
+  -> srcProv.GetMetricSources()
+  -> scrapeWithMetrics
+     -> MetricSource.Collect
+
+[sources/summary/summary.go]
+GetMetricSources
+  -> nodeLister.List
+  -> getNodeInfo(node)
+     -> addrResolver.NodeAddress(node)
+  -> NewSummaryMetricsSource
+
+Collect
+  -> src.kubeletClient.GetSummary
+  -> src.decodeNodeStats
+     -> decodeCPU
+        decodeMemory
+  -> src.decodePodStats
+     -> decodeCPU
+        decodeMemory
+```
+
+```go
+[pkg/storage/nodemetrics/reststorage.go]
+
+List
+  -> getNodeMetrics
+     -> getNodeMetrics(name)
+        -> prov.GetNodeMetrics(names...)
+
+[pkg/storage/podmetrics/reststorage.go]
+List
+  -> podLister.Pods(namespace).List(labelSelector)
+Get
+  -> podLister.Pods(namespace).Get(name)
+
+getPodMetrics
+  -> prov.GetContainerMetrics
+
+[pkg/provider/sink/sinkprov.go]
+type MetricsProvider interface {
+        PodMetricsProvider
+        NodeMetricsProvider
+}
+
+type PodMetricsProvider interface {
+        GetContainerMetrics(pods ...apitypes.NamespacedName) ([]TimeInfo, [][]metrics.ContainerMetrics, error)
+}
+
+type NodeMetricsProvider interface {
+        GetNodeMetrics(nodes ...string) ([]TimeInfo, []corev1.ResourceList, error)
+}
+
+
+GetNodeMetrics
+  -> corev1.ResourceName(corev1.ResourceCPU)
+     corev1.ResourceName(corev1.ResourceMemory)
+     
+GetContainerMetrics
+  -> corev1.ResourceName(corev1.ResourceCPU)
+     corev1.ResourceName(corev1.ResourceMemory)
+     
+Receive
+  -> newNodes
+  -> newPods
+```
+
+
+
 
 
 
@@ -5393,6 +5507,9 @@ Metrics Server通过从kubernet.summary_api收集节点和pod的CPU和内存使�
 
 
 
+# 15 kubernetes federation
+
+https://kubernetes.io/docs/concepts/cluster-administration/federation/
 
 
 
@@ -5406,10 +5523,8 @@ Metrics Server通过从kubernet.summary_api收集节点和pod的CPU和内存使�
 
 
 
+# 16 微服务
 
-
-# 15 微服务
-
-# 16. Etcd
+# 17. Etcd
 
 etcd是CoreOS团队于 2013 年 6 月发起的一个管理配置信息和服务发现(Service Discovery)的开源项目，基于golang实现，目标是构建一个高可用的分布式键值数据库，用户可以在多个节点上启动多个etcd实例，并添加它们为一个集群，同一个集群中的实例将会保持彼此信息的一致性。
