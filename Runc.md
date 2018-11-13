@@ -130,7 +130,7 @@ linux系统上，为了限制进程的权限，把进程分为特权进程(UID�
 
 #### 1.3.1.1 进程capability集
 
-每个进程有5个和capability有关的位图：Permitted，Inheritable，Effective，Ambient, B。对应进程描述符task_struct中的cred(include/linux/cred.h)里面的cap_permitted，cap_inheritable, cap_effective, cap_ambient，cap_bset 。
+每个进程有5个和capability有关的位图：Permitted，Inheritable，Effective，Ambient, Bset。对应进程描述符task_struct中的cred(include/linux/cred.h)里面的cap_permitted，cap_inheritable, cap_effective, cap_ambient，cap_bset 。
 
 - Permitted
   表示进程能够使用的capability，在cap_permitted中可以包含cap_effective中没有的capability，这些capability是被进程自己临时放弃的，也可以说cap_effective是cap_permitted的一个子集.
@@ -139,7 +139,7 @@ linux系统上，为了限制进程的权限，把进程分为特权进程(UID�
 - Effective
   当一个进程要进行某个特权操作时，内核会检查cap_effective的对应位是否有效，而不再是检查进程的UID是否为0.
 - Ambient
-- B
+- Bset
 
 #### 1.3.1.2 文件capabilities
 
@@ -159,49 +159,52 @@ linux系统上，为了限制进程的权限，把进程分为特权进程(UID�
 
 ### 1.3.2 Capabilities list
 当前Linux系统中共有38项特权，可在include/uapi/linux/capability.h文件中查看定义，进程的能力可以通过/proc/PID/status来查看。
-CAP_CHOWN                          0 - 允许改变文件的所有权
-CAP_DAC_OVERRIDE             1 - 忽略对文件的所有DAC访问限制
+
+```
+CAP_CHOWN                0 - 允许改变文件的所有权
+CAP_DAC_OVERRIDE         1 - 忽略对文件的所有DAC访问限制
 CAP_DAC_READ_SEARCH      2 - 忽略所有对读、搜索操作的限制
-CAP_FOWNER                         3 - 以最后操作的UID,覆盖文件的先前的UID
-CAP_FSETID                             4 - 确保在文件被修改后不修改setuid/setgid位
-CAP_KILL                                  5 - 允许对不属于自己的进程发送信号
-CAP_SETGID                             6 - 设定程序允许普通用户使用setgid函数,这与文件的setgid权限位无关
-CAP_SETUID                             7 - 设定程序允许普通用户使用setuid函数,这也文件的setuid权限位无关
-CAP_SETPCAP                          8 - 允许向其它进程转移能力以及删除其它进程的任意能力
-CAP_LINUX_IMMUTABLE       9 - 允许修改文件的不可修改(IMMUTABLE)和只添加(APPEND-ONLY)属性
+CAP_FOWNER               3 - 以最后操作的UID,覆盖文件的先前的UID
+CAP_FSETID               4 - 确保在文件被修改后不修改setuid/setgid位
+CAP_KILL                 5 - 允许对不属于自己的进程发送信号
+CAP_SETGID               6 - 设定程序允许普通用户使用setgid函数,这与文件的setgid权限位无关
+CAP_SETUID               7 - 设定程序允许普通用户使用setuid函数,这也文件的setuid权限位无关
+CAP_SETPCAP              8 - 允许向其它进程转移能力以及删除其它进程的任意能力
+CAP_LINUX_IMMUTABLE      9 - 允许修改文件的不可修改(IMMUTABLE)和只添加(APPEND-ONLY)属性
 CAP_NET_BIND_SERVICE     10 - 允许绑定到小于1024的端口
-CAP_NET_BROADCAST         11 - 允许网络广播和多播访问
-CAP_NET_ADMIN                  12 - 允许执行网络管理任务:接口,防火墙和路由等
-CAP_NET_RAW                      13 - 允许使用原始(raw)套接字
-CAP_IPC_LOCK                      14 - 允许锁定内存片段
-CAP_IPC_OWNER                  15 - 忽略IPC所有权检查
-CAP_SYS_MODULE               16 - 允许普通用户插入和删除内核模块
-CAP_SYS_RAWIO                   17 - 允许用户打开端口,并读取修改端口数据,一般用ioperm/iopl函数
-CAP_SYS_CHROOT                18 - 允许使用chroot()系统调用
-CAP_SYS_PTRACE                  19 - 允许跟踪任何进程
-CAP_SYS_PACCT                     20 - 允许配置process accounting
-CAP_SYS_ADMIN                    21 - 允许执行系统管理任务,如挂载/卸载文件系统等
-CAP_SYS_BOOT                      22 - 允许普通用使用reboot()函数
-CAP_SYS_NICE                        23 - 允许提升优先级,设置其它进程的优先级
-CAP_SYS_RESOURCE             24 - 忽略资源限制
-CAP_SYS_TIME                       25 - 允许改变系统时钟
-CAP_SYS_TTY_CONFIG          26 - 允许配置TTY设备
-CAP_MKNOD                          27 - 允许使用mknod系统调用
-CAP_LEASE                              28 - 允许在文件上建立租借锁
-CAP_SETFCAP                         31 - 允许在指定的程序上授权能力给其它程序
+CAP_NET_BROADCAST        11 - 允许网络广播和多播访问
+CAP_NET_ADMIN            12 - 允许执行网络管理任务:接口,防火墙和路由等
+CAP_NET_RAW              13 - 允许使用原始(raw)套接字
+CAP_IPC_LOCK             14 - 允许锁定内存片段
+CAP_IPC_OWNER            15 - 忽略IPC所有权检查
+CAP_SYS_MODULE           16 - 允许普通用户插入和删除内核模块
+CAP_SYS_RAWIO            17 - 允许用户打开端口,并读取修改端口数据,一般用ioperm/iopl函数
+CAP_SYS_CHROOT           18 - 允许使用chroot()系统调用
+CAP_SYS_PTRACE           19 - 允许跟踪任何进程
+CAP_SYS_PACCT            20 - 允许配置process accounting
+CAP_SYS_ADMIN            21 - 允许执行系统管理任务,如挂载/卸载文件系统等
+CAP_SYS_BOOT             22 - 允许普通用使用reboot()函数
+CAP_SYS_NICE             23 - 允许提升优先级,设置其它进程的优先级
+CAP_SYS_RESOURCE         24 - 忽略资源限制
+CAP_SYS_TIME             25 - 允许改变系统时钟
+CAP_SYS_TTY_CONFIG       26 - 允许配置TTY设备
+CAP_MKNOD                27 - 允许使用mknod系统调用
+CAP_LEASE                28 - 允许在文件上建立租借锁
+CAP_SETFCAP              31 - 允许在指定的程序上授权能力给其它程序
 CAP_WAKE_ALARM
 CAP_BLOCK_SUSPEND
-
 CAP_SYSLOG
 CAP_MAC_ADMIN
 CAP_MAC_OVERRIDE
 CAP_AUDIT_CONTROL
 CAP_AUDIT_READ
 CAP_AUDIT_WRITE               以上6个涉及syslog,mac,audit等安全模块安全模块
+```
 
 > 参考：https://www.cnblogs.com/iamfy/archive/2012/09/20/2694977.html
 
 ### 1.3.3 libcap
+
 capsh      - capability shell wrapper
 getcap      - 获取可执行文件所具有的能力
 setcap       - 设置可执行文件的能力
@@ -215,6 +218,11 @@ getpcaps  - 获取进程的能力
 /bin/chown = cap_chown+eip
 # setcap -r /bin/chown            // 删除cap
 ```
+
+### 1.3.4 golibcap
+
+https://github.com/syndtr/gocapability
+
 
 
 ## 1.4 seccomp
@@ -272,7 +280,170 @@ seccomp支持两种模式：
 
 > https://blog.csdn.net/chweiweich/article/details/55098410
 
+### 1.4.4 Filters
+
+SECCOMP_SET_MODE_FILTER模式中args为指向sock_fprog的指针
+
+```c
+           struct sock_fprog {
+               unsigned short      len;    /* Number of BPF instructions */
+               struct sock_filter *filter; /* Pointer to array of
+                                              BPF instructions */
+           };
+```
+
+包含一个或多个BPF指令
+
+```c
+           struct sock_filter {            /* Filter block */
+               __u16 code;                 /* Actual filter code */
+               __u8  jt;                   /* Jump true */
+               __u8  jf;                   /* Jump false */
+               __u32 k;                    /* Generic multiuse field */
+           };
+```
+
+使用示例：
+
+```c
+       #include <errno.h>
+       #include <stddef.h>
+       #include <stdio.h>
+       #include <stdlib.h>
+       #include <unistd.h>
+       #include <linux/audit.h>
+       #include <linux/filter.h>
+       #include <linux/seccomp.h>
+       #include <sys/prctl.h>
+
+       #define X32_SYSCALL_BIT 0x40000000
+
+       static int
+       install_filter(int syscall_nr, int t_arch, int f_errno)
+       {
+           unsigned int upper_nr_limit = 0xffffffff;
+
+           /* Assume that AUDIT_ARCH_X86_64 means the normal x86-64 ABI */
+           if (t_arch == AUDIT_ARCH_X86_64)
+               upper_nr_limit = X32_SYSCALL_BIT - 1;
+
+           struct sock_filter filter[] = {
+               /* [0] Load architecture from 'seccomp_data' buffer into
+                      accumulator */
+               BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                        (offsetof(struct seccomp_data, arch))),
+
+               /* [1] Jump forward 5 instructions if architecture does not
+                      match 't_arch' */
+               BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, t_arch, 0, 5),
+
+               /* [2] Load system call number from 'seccomp_data' buffer into
+                      accumulator */
+               BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                        (offsetof(struct seccomp_data, nr))),
+
+               /* [3] Check ABI - only needed for x86-64 in blacklist use
+                      cases.  Use JGT instead of checking against the bit
+                      mask to avoid having to reload the syscall number. */
+               BPF_JUMP(BPF_JMP | BPF_JGT | BPF_K, upper_nr_limit, 3, 0),
+
+               /* [4] Jump forward 1 instruction if system call number
+                      does not match 'syscall_nr' */
+               BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, syscall_nr, 0, 1),
+               /* [5] Matching architecture and system call: don't execute
+                   the system call, and return 'f_errno' in 'errno' */
+               BPF_STMT(BPF_RET | BPF_K,
+                        SECCOMP_RET_ERRNO | (f_errno & SECCOMP_RET_DATA)),
+
+               /* [6] Destination of system call number mismatch: allow other
+                      system calls */
+               BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+               /* [7] Destination of architecture mismatch: kill process */
+               BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
+           };
+
+           struct sock_fprog prog = {
+               .len = (unsigned short) (sizeof(filter) / sizeof(filter[0])),
+               .filter = filter,
+           };
+
+           if (seccomp(SECCOMP_SET_MODE_FILTER, 0, &prog)) {
+               perror("seccomp");
+               return 1;
+           }
+
+           return 0;
+       }
+
+       int
+       main(int argc, char **argv)
+       {
+           if (argc < 5) {
+               fprintf(stderr, "Usage: "
+                       "%s <syscall_nr> <arch> <errno> <prog> [<args>]\n"
+                       "Hint for <arch>: AUDIT_ARCH_I386: 0x%X\n"
+                       "                 AUDIT_ARCH_X86_64: 0x%X\n"
+                       "\n", argv[0], AUDIT_ARCH_I386, AUDIT_ARCH_X86_64);
+               exit(EXIT_FAILURE);
+           }
+
+           if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
+               perror("prctl");
+               exit(EXIT_FAILURE);
+           }
+
+           if (install_filter(strtol(argv[1], NULL, 0),
+                              strtol(argv[2], NULL, 0),
+                              strtol(argv[3], NULL, 0)))
+               exit(EXIT_FAILURE)
+           execv(argv[4], &argv[4]);
+           perror("execv");
+           exit(EXIT_FAILURE);
+       }
+```
+
+### 1.4.5golibseccomp
+
+https://github.com/seccomp/libseccomp-golang
+
 ## 1.5 rlimits
+
+获取/设置进程的资源限制，包含以下系统调用，可以通过`/proc/pid/limts`查看
+
+```c
+       #include <sys/time.h>
+       #include <sys/resource.h>
+
+       int getrlimit(int resource, struct rlimit *rlim);
+       int setrlimit(int resource, const struct rlimit *rlim);
+
+       int prlimit(pid_t pid, int resource, const struct rlimit *new_limit,
+                   struct rlimit *old_limit);
+```
+
+resource参数可以指定如下
+
+```
+RLIMIT_AS     - 限制进程vm
+RLIMIT_CORE   - 限制进程corefile大小
+RLIMIT_CPU    - 限制进程cpu
+RLIMIT_DATA   - 限制进程数据段大小(initialized data, uninitialized data, and heap)
+RLIMIT_FSIZE  - 限制进程创建文件大小
+RLIMIT_LOCKS  
+RLIMIT_MEMLOCK
+RLIMIT_MSGQUEUE
+RLIMIT_NICE
+RLIMIT_NOFILE
+RLIMIT_NPROC
+RLIMIT_RSS
+RLIMIT_RTPRIO
+RLIMIT_RTTIME
+RLIMIT_SIGPENDING
+RLIMIT_STACK
+```
+
+
 
 ##1.6 UFS
 
