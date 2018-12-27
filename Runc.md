@@ -48,10 +48,10 @@ namespace涉及命令：
 
 **`nsenter`**  - run program with namespaces of other processes
 
-参数如下：
+  参数如下：
 
-```
---target pid 从指定进程获取上下文
+  ```
+  --target pid 从指定进程获取上下文
               /proc/pid/ns/mnt    the mount namespace
               /proc/pid/ns/uts    the UTS namespace
               /proc/pid/ns/ipc    the IPC namespace
@@ -61,28 +61,28 @@ namespace涉及命令：
               /proc/pid/ns/cgroup the cgroup namespace
               /proc/pid/root      the root directory
               /proc/pid/cwd       the working directory respectively
---mount[=file] 进入mount namespace
---uts[=file]   进入uts namespace
---ipc[=file]   进入IPC namaspace
---net[=file]   进入network namespace
---pid[=file]   进入pid namespace
---user[=file]  进入user namespace
---cgroup[=file] 进入user namespace
---root[=directory] 设置root目录
-```
-
-该命令可以用于进入docker内部：
-
-```shell
-# docker inspect -f {{.State.Pid}} tomcat
-# nsenter --mount --uts --ipc --net --pid --target 31356 bash
-```
+  --mount[=file] 进入mount namespace
+  --uts[=file]   进入uts namespace
+  --ipc[=file]   进入IPC namaspace
+  --net[=file]   进入network namespace
+  --pid[=file]   进入pid namespace
+  --user[=file]  进入user namespace
+  --cgroup[=file] 进入user namespace
+  --root[=directory] 设置root目录
+  ```
+  该命令可以用于进入docker内部：
+  ```shell
+  # docker inspect -f {{.State.Pid}} tomcat
+  # nsenter --mount --uts --ipc --net --pid --target 31356 bash
+  ```
 
 **`lsns`** - list namespaces
 
 
 
 ## 1.2 cgroup
+
+### 1.2.1 介绍
 
 cgroup用于对进程占用的资源进行限制、监控和统计，这些资源包含CPU，内存，存储，网络等。通过Cgroup可以方便地限制某个进程的资源占用，并可以对进程实时监控和统计信息。
 
@@ -93,16 +93,16 @@ cgroup包含三个组件：
 - subsystem：
   一组资源控制模块，关联到cgroup上并对该cgroup中的进程做限制和控制。可以通过lssubsys命令查看当前内核支持的subsystem，通常包含以下几项：
   `blkio`：  设置块设备IO访问控制 
-  `cpu` ：   设置cgroup中进程的cpu调度策略
+  `cpu` ：     设置cgroup中进程的cpu调度策略
   `cpuacct`：统计cgroup中进程的cpu占用率
-  `cpuset`： 多核中设置cpu中进程可以使用的cpu和内存
-  `devices`  控制cgroup中进程对设备的访问
-  `freezer`  suspend/resume cgrpup中的进程
-  `memory`   控制cgroup中进程的内存占用
-  `net_cls`  将cgroup中进程产生的网络包分类，便于TC限流
-  `net_prio` 设置cgroup中进程产生的网络流量的优先级
-  `hugetlb`
-  `pids`
+  `cpuset`：  多核中设置cpu中进程可以使用的cpu和内存
+  `devices`:   控制cgroup中进程对设备的访问
+  `freezer`:   suspend/resume cgrpup中的进程
+  `memory`:     控制cgroup中进程的内存占用
+  `net_cls`:   将cgroup中进程产生的网络包分类，便于TC限流
+  `net_prio`: 设置cgroup中进程产生的网络流量的优先级
+  `hugetlb`:
+  `pids`:
 
 - hierarchy
   通过hierarchy将一组cgroup组成树状结构，通过树状结构实现继承。类如cgroup1限制了IO访问，其中某个进程需要进一步限制设备访问，为了避免影响cgroup1中其他进程，可以创建cgroup2，继承cgroup1的限制，并增加设备访问限制而不影响cgroup1中的其他进程。
@@ -122,6 +122,92 @@ cgconfigparser - setup control group file system
 /usr/sbin/cgclear
 /usr/sbin/cgconfigparser
 
+### 2.2.2 go cgroup
+
+https://github.com/containerd/cgroups
+
+- 创建cgroup
+
+  ```go
+  shares := uint64(100)
+  control, err := cgroups.New(cgroups.V1, cgroups.StaticPath("/test"), &specs.LinuxResources{
+      CPU: &specs.CPU{
+          Shares: &shares,
+      },
+  })
+  defer control.Delete()
+  ```
+
+- 创建支持systemd slice的cgroup
+
+  ```go
+  control, err := cgroups.New(cgroups.Systemd, cgroups.Slice("system.slice", "runc-test"), &specs.LinuxResources{
+      CPU: &specs.CPU{
+          Shares: &shares,
+      },
+  })
+  ```
+
+- locad cgroup
+
+  ```go
+  control, err = cgroups.Load(cgroups.V1, cgroups.StaticPath("/test"))
+  ```
+
+- 加入cgroup
+
+  ```go
+  if err := control.Add(cgroups.Process{Pid:1234}); err != nil {
+  }
+  ```
+
+- 更新cgroup
+
+  ```go
+  shares = uint64(200)
+  if err := control.Update(&specs.LinuxResources{
+      CPU: &specs.CPU{
+          Shares: &shares,
+      },
+  }); err != nil {
+  }
+  ```
+
+- 冻结、解冻cgroup
+
+  ```go
+  if err := control.Freeze(); err != nil {
+  }
+  if err := control.Thaw(); err != nil {
+  }
+  ```
+
+- 列出cgroup中进程
+
+  ```go
+  processes, err := control.Processes(cgroups.Devices, recursive)
+  ```
+
+- 获取cgroup状态
+
+  ```go
+  stats, err := control.Stat()
+  ```
+
+- 移动cgroup
+
+  ```go
+  err := control.MoveTo(destination)
+  ```
+
+- 创建subcgroup
+
+  ```go
+  subCgroup, err := control.New("child", resources)
+  ```
+
+
+
 ## 1.3 capabilities
 
 ### 1.3.1 介绍
@@ -133,13 +219,13 @@ linux系统上，为了限制进程的权限，把进程分为特权进程(UID�
 每个进程有5个和capability有关的位图：Permitted，Inheritable，Effective，Ambient, Bset。对应进程描述符task_struct中的cred(include/linux/cred.h)里面的cap_permitted，cap_inheritable, cap_effective, cap_ambient，cap_bset 。
 
 - Permitted
-  表示进程能够使用的capability，在cap_permitted中可以包含cap_effective中没有的capability，这些capability是被进程自己临时放弃的，也可以说cap_effective是cap_permitted的一个子集.
+  表示进程能够使用的capability。在cap_permitted中可以包含cap_effective中没有的capability，这些capability是被进程自己临时放弃的，也可以说cap_effective是cap_permitted的一个子集.
 - Inheritable
   表示子进程能够继承的capability。
 - Effective
   当一个进程要进行某个特权操作时，内核会检查cap_effective的对应位是否有效，而不再是检查进程的UID是否为0.
-- Ambient
-- Bset
+- Ambient  - Ambient capability set
+- Bset         - capability bounding set
 
 #### 1.3.1.2 文件capabilities
 
@@ -205,10 +291,10 @@ CAP_AUDIT_WRITE               以上6个涉及syslog,mac,audit等安全模块安
 
 ### 1.3.3 libcap
 
-capsh      - capability shell wrapper
-getcap      - 获取可执行文件所具有的能力
+capsh        - capability shell wrapper
+getcap       - 获取可执行文件所具有的能力
 setcap       - 设置可执行文件的能力
-getpcaps  - 获取进程的能力
+getpcaps   - 获取进程的能力
 使用示例：
 授权普通用户可以用/bin/chown程序更改任意文件的owner
 
@@ -222,6 +308,63 @@ getpcaps  - 获取进程的能力
 ### 1.3.4 golibcap
 
 https://github.com/syndtr/gocapability
+
+接口定义如下：
+
+```go
+type Capabilities interface {
+	// Get check whether a capability present in the given
+	// capabilities set. The 'which' value should be one of EFFECTIVE,
+	// PERMITTED, INHERITABLE, BOUNDING or AMBIENT.
+	Get(which CapType, what Cap) bool
+
+	// Empty check whether all capability bits of the given capabilities
+	// set are zero. The 'which' value should be one of EFFECTIVE,
+	// PERMITTED, INHERITABLE, BOUNDING or AMBIENT.
+	Empty(which CapType) bool
+
+	// Full check whether all capability bits of the given capabilities
+	// set are one. The 'which' value should be one of EFFECTIVE,
+	// PERMITTED, INHERITABLE, BOUNDING or AMBIENT.
+	Full(which CapType) bool
+
+	// Set sets capabilities of the given capabilities sets. The
+	// 'which' value should be one or combination (OR'ed) of EFFECTIVE,
+	// PERMITTED, INHERITABLE, BOUNDING or AMBIENT.
+	Set(which CapType, caps ...Cap)
+
+	// Unset unsets capabilities of the given capabilities sets. The
+	// 'which' value should be one or combination (OR'ed) of EFFECTIVE,
+	// PERMITTED, INHERITABLE, BOUNDING or AMBIENT.
+	Unset(which CapType, caps ...Cap)
+
+	// Fill sets all bits of the given capabilities kind to one. The
+	// 'kind' value should be one or combination (OR'ed) of CAPS,
+	// BOUNDS or AMBS.
+	Fill(kind CapType)
+
+	// Clear sets all bits of the given capabilities kind to zero. The
+	// 'kind' value should be one or combination (OR'ed) of CAPS,
+	// BOUNDS or AMBS.
+	Clear(kind CapType)
+
+	// String return current capabilities state of the given capabilities
+	// set as string. The 'which' value should be one of EFFECTIVE,
+	// PERMITTED, INHERITABLE BOUNDING or AMBIENT
+	StringCap(which CapType) string
+
+	// String return current capabilities state as string.
+	String() string
+
+	// Load load actual capabilities value. This will overwrite all
+	// outstanding changes.
+	Load() error
+
+	// Apply apply the capabilities settings, so all changes will take
+	// effect.
+	Apply(kind CapType) error
+}
+```
 
 
 
@@ -237,58 +380,67 @@ Linux kernel 从2.6.23版本引入的一种简洁的 sandboxing 机制。
 
 内核配置中开启了CONFIG_SECCOMP和CONFIG_SECCOMP_FILTER后，通过系统调用[ptrctl(2)](http://www.kernel.org/doc/man-pages/online/pages/man2/prctl.2.html)或者通过系统调用[seccomp(2)](https://www.kernel.org/doc/Documentation/prctl/seccomp_filter.txt)开启seccomp。
 
-seccomp - operate on Secure Computing state of the process
+- seccomp
 
-```c
-       #include <linux/seccomp.h>
-       #include <linux/filter.h>
-       #include <linux/audit.h>
-       #include <linux/signal.h>
-       #include <sys/ptrace.h>
+  operate on Secure Computing state of the process
 
-       int seccomp(unsigned int operation, unsigned int flags, void *args);
-```
+  ```c
+  #include <linux/seccomp.h>
+  #include <linux/filter.h>
+  #include <linux/audit.h>
+  #include <linux/signal.h>
+  #include <sys/ptrace.h>
+  int seccomp(unsigned int operation, unsigned int flags, void *args);
+  ```
 
-当前支持以下falgs：
+  当前，operation参数支持以下值：
 
-```
-SECCOMP_SET_MODE_STRICT
-SECCOMP_SET_MODE_FILTER
-SECCOMP_GET_ACTION_AVAIL
-```
+  - **SECCOMP_SET_MODE_STRICT**
 
-prctl - operations on a process
+    该模式下仅read/write/_exit系统调用可用，flags参数必须为0，args参数必须为NULL。该模式等同
 
-```c
- #include <sys/prctl.h>
+    ` prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT);`
 
-int prctl(int option, unsigned long arg2, unsigned long arg3,
-                 unsigned long arg4, unsigned long arg5);
-```
+  - **SECCOMP_SET_MODE_FILTER**
 
-### 1.4.3 seccomp模式
+    该模式下仅BPF中定义的系统调用可用，agrs指向`struct sock_fprog`，该结构可用过滤任何系统调用及其参数。flags参数可以指定如下值：
 
-seccomp支持两种模式：
+    - SECCOMP_FILTER_FLAG_TSYNC
 
-- **SECCOMP_MODE_STRICT**
+      当添加新的filter时，将调用进程的所有其他线程同步到同一个seccomp filter tree。
 
-  在SECCOMP_MODE_STRICT模式下，进程不能使用read(2)，write(2)，_exit(2)和sigreturn(2)以外的其他系统调用。
+    - SECCOMP_FILTER_FLAG_LOG
 
-- **SECCOMP_MODE_FILTER**
+      除了SECCOMP_RET_ALLOW外，所有filter返回动作都被记录。
 
-  在SECCOMP_MODE_FILTER模式下，可以利用Berkeley Packet Filter配置哪些系统调用及它们的参数可以被进程使用。
+  - **SECCOMP_GET_ACTION_AVAIL**
+
+    测试内核是否支持某action，该模式下flags参数必须为0，args参数为指向filter的指针。当flags参数为0时，该模式等同：
+
+    `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, args);`
+
+- prctl
+
+  operations on a process
+
+  ```c
+  #include <sys/prctl.h>
+  int prctl(int option, unsigned long arg2, unsigned long arg3,
+                   unsigned long arg4, unsigned long arg5);
+  ```
+
+  option参数可以设置为`PR_SET_SECCOMP`或`PR_GET_SECCOMP`,arg2参数设置sec模式， 当设置为CONFIG_SECCOMP_FILTER模式时，通过arg3指定sock_fprog指针。
 
 > https://blog.csdn.net/chweiweich/article/details/55098410
 
-### 1.4.4 Filters
+### 1.4.3 Filters
 
 SECCOMP_SET_MODE_FILTER模式中args为指向sock_fprog的指针
 
 ```c
            struct sock_fprog {
-               unsigned short      len;    /* Number of BPF instructions */
-               struct sock_filter *filter; /* Pointer to array of
-                                              BPF instructions */
+               unsigned short     len;     /* Number of BPF instructions */
+               struct sock_filter *filter; /* Pointer to array of BPF instructions */
            };
 ```
 
@@ -403,9 +555,13 @@ SECCOMP_SET_MODE_FILTER模式中args为指向sock_fprog的指针
        }
 ```
 
-### 1.4.5golibseccomp
+### 1.4.4 golibseccomp
 
-https://github.com/seccomp/libseccomp-golang
+libseccomp库为内核的系统调滤机制提供了一个易于使用，独立于平台的接口，libseccomp 的API被设计为抽象出底层的基于BPF的系统过滤语言，并且呈现一个更传统的基于函数调用的过滤接口，该接口为应用程序开发人员所熟悉并易于采用。
+
+[libseccomp-golang](https://github.com/seccomp/libseccomp-golang)库基于libseccomp提供了基于Go的接口。
+
+
 
 ## 1.5 rlimits
 
@@ -423,29 +579,36 @@ https://github.com/seccomp/libseccomp-golang
 ```
 
 resource参数可以指定如下
-
 ```
-RLIMIT_AS     - 限制进程vm
+RLIMIT_AS     - 限制进程虚拟内存地址空间(virtual memory address space)
 RLIMIT_CORE   - 限制进程corefile大小
-RLIMIT_CPU    - 限制进程cpu
+RLIMIT_CPU    - 限制进程cpu时间，当进程达到soft限制时发送SIGXCPU信号，默认终止进程。
+                达到hard限制时发送SIGKILL信号。
 RLIMIT_DATA   - 限制进程数据段大小(initialized data, uninitialized data, and heap)
 RLIMIT_FSIZE  - 限制进程创建文件大小
 RLIMIT_LOCKS  
-RLIMIT_MEMLOCK
-RLIMIT_MSGQUEUE
-RLIMIT_NICE
-RLIMIT_NOFILE
-RLIMIT_NPROC
-RLIMIT_RSS
-RLIMIT_RTPRIO
-RLIMIT_RTTIME
-RLIMIT_SIGPENDING
-RLIMIT_STACK
+RLIMIT_MEMLOCK  - 限制内存锁大小。
+RLIMIT_MSGQUEUE - 限制POSIX消息队列(since Linux 2.6.8)
+RLIMIT_NICE     - 限制setpriority/nice能够设置的nice
+RLIMIT_NOFILE   - 限制进程能够打开的文件描述符大小
+RLIMIT_NPROC    - 限制进程数
+RLIMIT_RSS      - 限制RAM中的虚拟页
+RLIMIT_RTPRIO   - 限制进程通过sched_setscheduler/sched_setparam设置实时优先级最大值
+RLIMIT_RTTIME   - 限制实时调度策略下调度的进程在不进行阻塞系统调用的情况下可能消耗的CPU时间量的限制
+RLIMIT_SIGPENDING - 信号队列限制
+RLIMIT_STACK    -  限制进程stack
+```
+resource分为soft和hard，通过rlim结构体定义：
+```c
+struct rlimit {
+	rlim_t rlim_cur;  /* Soft limit */
+	rlim_t rlim_max;  /* Hard limit (ceiling for rlim_cur) */
+};
 ```
 
 
 
-##1.6 UFS
+## 1.6 UFS
 
 
 
@@ -819,4 +982,24 @@ type linuxContainer struct {
 
 
 
+
+```go
+startContainer
+  -> createContainer
+  -> run
+     -> newProcess(*config, r.init)
+	 -> CT_ACT_CREATE   -> r.container.Start(process)
+	    CT_ACT_RESTORE  -> r.container.Restore(process, r.criuOpts)
+		CT_ACT_RUN      -> r.container.Run(process)
+  
+  
+create.go
+startContainer(context, spec, CT_ACT_CREATE, nil)
+
+run.go
+startContainer(context, spec, CT_ACT_RUN, nil)
+
+restore.go
+startContainer(context, spec, CT_ACT_RESTORE, options)
+```
 
