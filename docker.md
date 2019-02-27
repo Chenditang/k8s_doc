@@ -1,7 +1,7 @@
 # 1 docker 架构
 
 从Docker 1.11之后，Docker Daemon被分成了多个模块以适应OCI标准。其中，containerd独立负责容器运行时和生命周期（如创建、启动、停止、中止、信号处理、删除等），其他一些如镜像构建、卷管理、日志等由Docker Daemon的其他模块处理。
-![docker](../Picture/docker_com.png)
+![docker](./Picture/docker_com.png)
 
 
 
@@ -25,7 +25,7 @@ dockerd本身属于对容器相关操作的api的最上层封装，直接面向�
 
 containerd 是容器技术标准化之后的产物，为了能够兼容 OCI 标准，docker公司将容器**运行时**及其**管理功能**从 Docker Daemon 剥离，作为独立的开源项目发展和运营。理论上，即使不运行 dockerd 也能直接通过 containerd 来管理容器.(containerd 本身也只是一个守护进程, 容器的实际运行时由 runC 控制.)
 
-![architecture](../Picture/docker_architecture.png)
+![architecture](./Picture/docker_architecture.png)
 
 
 
@@ -38,13 +38,13 @@ containerd并不是直接面向最终用户的，而是主要用于集成到更�
 
 每个containerd只负责一台机器，实现Pull镜像，启动、停止容器，网络，存储等功能。containerd底层通过 **docker-containerd-shim** 结合 runC或者任何与 OCI 兼容的运行时管理容器的生命周期。
 
-![containerd](../Picture/containerd.png)
+![containerd](./Picture/containerd.png)
 
 ### 1.3.1 containerd详细架构
 
 containerd详细架构如下：
 
-![Containerd Architecture](../Picture/architecture.png)
+![Containerd Architecture](./Picture/architecture.png)
 
 中间一层里包含了三个子系统，支持以下功能：
 
@@ -59,7 +59,7 @@ containterd上接docker daemon，下连shim。将docker daemon传过来的GRPC�
 
 通过containerd的cri插件，Kubernetes使用containerd作为容器运行时：
 
-![containerd_cri](../Picture/containerd_cri.png)
+![containerd_cri](./Picture/containerd_cri.png)
 
 cri在containerd1.1版本中，作为一个本地的插件被内置到containerd中并默认启用。
 
@@ -87,7 +87,7 @@ CNM是Docker被提出的容器网络规范，现在已经被Cisco Contiv, Kuryr,
 网络驱动可以划分为**Native Drivers**(原生驱动，libnetwork内置的或Docker支持的)和**Remote Drivers**(远程驱动，用于支持第三方插件)。也可以按照适用范围被划分为本地（单主机）的和全局的 (多主机）。
 
 libnetwork CNM 定义了 docker 容器的网络模型，按照该模型开发出的 driver 就能与 docker daemon 协同工作，实现容器网络。docker 原生的 driver 包括 none、bridge、overlay 和 macvlan，第三方 driver 包括 flannel、weave、calico 等:
-![libnetwork](../Picture/libnetwork.jpg)
+![libnetwork](./Picture/libnetwork.jpg)
 
 ### 6.1.2 CNM组件
 
